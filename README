@@ -1,0 +1,296 @@
++-----------------------------------------------------+
+|            IF-MAP-Client Version 0.1.6.1            |
++-----------------------------------------------------+
+
+Content:
+========
+1) Credits
+
+2) License
+
+3) Usage
+
+4) Setup/Installation
+
+   a) Snort installation & setup
+   
+   b) Nagios installation & setup
+   
+   c) IP-Tables installation & setup
+   
+   d) FreeRadius installation & setup
+   
+   e) configuring IF-MAP-Client
+   
+   f) running IF-MAP-Client
+   
+   g) certificate-based authentication
+   
+
+
+
+1) Credits:
+===========
+Developed within the ESUKOM-Project in 2011 by Decoit GmbH (http://www.decoit.de/)
+Uses the ifmapj-library developed by Trust, FH Hannover (http://trust.inform.fh-hannover.de/) 
+Based on the irondhcp-0.1.0 developed by Trust, FH Hannover (http://trust.inform.fh-hannover.de/)
+
+Additional libraries used in current version: 
+- Google Guava (http://code.google.com/p/guava-libraries/)
+- Apache Commons Exec (http://commons.apache.org/exec/)
+
+more Information can be found on the ESUKOM-Project Homepage (http://www.esukom.de/)
+
+
+
+2) License:
+===========
+Licensed to the Apache Software Foundation (ASF) under one   
+or more contributor license agreements.  See the NOTICE file  
+distributed with this work for additional information         
+regarding copyright ownership.  The ASF licenses this file    
+to you under the Apache License, Version 2.0 (the            
+"License"); you may not use this file except in compliance    
+with the License.  You may obtain a copy of the License at    
+                                                               
+http://www.apache.org/licenses/LICENSE-2.0                   
+                                                               
+Unless required by applicable law or agreed to in writing,    
+software distributed under the License is distributed on an  
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY        
+KIND, either express or implied.  See the License for the     
+specific language governing permissions and limitations       
+under the License.                
+
+
+
+3) Usage:
+=========
+The IfMapClient in general can be used to observe log-files from different applications (snort/nagios/iptables/radius), 
+process these entries, map them to IFMapEvents and send them to a Map-Server. Furthermore, it can subscribe to
+some Client-Identifiers and poll for new results (currently only used inside the ip-tables-component).
+
+Currently, the IfMapClient holds different components for working with IPTables, Snort, Radius and Nagios. In the current 
+release, only one of the components can be active at a time, so you effectively need one instance of the IfMapClient
+for every component you want to observe (this may change in future releases). At current State, the different components 
+performs the following tasks:
+
+Snort-Component:    Read out Snort-Alert from logfile or database, map them to IFMAP-Events and send them to the MAP-Server
+                 
+Nagios-Component:   Receive Nagios-Events over a specific port, map them to IFMAP-Events and send them to the MAP-Server
+
+IPTables-Component: Read out ULOG-File for new Datastreams, maps them to IFMAP-Events and send them to the MAP-Server. 
+                    After an initial Datastream is detected, the IfMapClient will eventually perform some checks in order to
+                    decide if the client should be unblocked (allowed) or not. These Checks will be done by searching the 
+                    current IF-MAP-Metadatagraph for the presence (or absence) of specific Metadata.If a predefined event is 
+                    detected for an unblocked (or allowed) client (e.g. a specific snort-alarm), the IfMapClient will block this
+                    client via IPTables.
+
+Radius-Component:	Read out Radius-Logfiles for new authentications- and accounting-data. Currently, it recognizes only events 
+                    that occur after the start of the client.
+ 
+A more detailed guide on setting up the IfMapClient and its components can be found under section 4d and 4e. 
+
+There are also so called "Stand-Alone-Versions", that are available at the ESUKOM Project-Website (www.esukom.de). These Versions 
+comes mostly pre-configured for one of the available Components.                                                                               
+
+
+
+4) Setup/Installation:
+======================
+a) Snort installation & setup:
+
+   If there is no existing Snort Installation, begin with installing and configuring
+   the Snort IDS first (http://www.snort.org/). The IfMapClient has currently
+   been tested with the following versions:
+   
+   - Snort 2.9.0.3 under Windows 7 
+   - snort 2.8.5.2 under Debian 6
+   
+   Some Snort-Installation-Guides can be found here:
+   
+   Win7    : http://www.snort.org/assets/151/Installing_Snort_2.8.6.1_on_Windows_7.pdf
+   Debian 6: http://www.snort.org/assets/167/deb_snort_howto.pdf
+   more    : http://www.snort.org/docs
+   
+   A simple and quick way is to use the packet-manager (e.g. Synaptic under Debian) to install snort
+   and its components, but in most cases you wont get the latest version
+
+   Next, configure Snorts logging options. Currently there are two logging-modes supported
+   by the IfMapClient (in terms that the Client can read the logged messages from Snort):
+   
+   - read log messages from ASCII-Log-File or Barnyard-Log-Files  (faster, mostly stable)
+   - read log messages from Database (MYSQL) (slower, unstable)
+   
+   To activate ASCII-File_Logging enter add the following line to /etc/snort/snort.conf (section 4, output plugins)
+   
+   - output alert_full: alertlog
+   
+   after restarting snort (or reloading the configuration) the log-file will be written to /etc/var/log/snort/alertlog
+   
+   Take a look at the Snort-Documentation on further information about how to activate the different 
+   logging methods within snort-configuration-file.
+   
+   To enable Portscan detection in Snort, just change the following lines inside snort.conf
+   (usually located at /etc/snort/snort.conf):
+
+   ...
+   # Portscan detection.  For more information, see README.sfportscan
+   preprocessor sfportscan: proto  { all } memcap { 10000000 } sense_level { low } logfile { /var/log/snort/portscan.log }
+   ...
+   
+   After this, restart the Snort Daemon (e.g. /etc/init.d/snortbarn restart)
+   
+   Additionally, there are some example-files that are distributed with the IfMapClient:
+   
+   - examples/snort_files/Snortstart(Win7).bat	   -> Batch-File for executing Snort under Windows 7
+   - examples/snort_files/create_snort_tables      -> SQL-Statement for creating the snort database scheme
+   - examples/snort_files/clear_snort_tables	   -> SQL-Statement for clearing the snort database
+   - examples/snort_files/alertlog_dump/alertlog   -> Example Snort-ASCII_Log-File
+   - examples/snort_files/db_dump/snort_alerts.sql -> Example Snort-SQL-Dump
+   
+  
+b) Nagios installation & setup:
+
+   Get Nagios from http://www.nagios.org/ or use the packet-manager to install Nagios. Currently,
+   the IfMapClient has been tested with Version 3.2.3 (3.10.2010) running under Debian 6.
+   
+   In order to receive messages from Nagios, the IfMapClient listens to a specific socket-port
+   and receives messages from this port. Therefore, Nagios needs a way to send Host/Service
+   Information over this port. To accomplish that, we use Nagios-Makros 
+   (http://nagios.sourceforge.net/docs/3_0/macros.html) that will be processed and send out 
+   by some additional event-handler scripts (http://nagios.sourceforge.net/download/contrib/documentation/german/1_0/eventhandlers.htm). 
+   To accomplish this, the following Steps has to be taken:
+   
+   - inside the nagios.cfg (usually /etc/nagios/) we have to define the location of the
+     object-config-file for every host we want to monitor. These files are usually placed
+     within the "objects" subfolder. For example, it should look something similar to this:
+     
+     ...
+     cfg_file=/etc/nagios//objects/host1.cfg
+     cfg_file=/etc/nagios//objects/host2.cfg
+     ...
+     
+     Some example configuration-files can be found within the example files distributed with this package
+     under examples/nagios_files/etc/nagios
+     
+   - next, we have to define some commands inside commands.cfg (usually /etc/nagios/objects). 
+     A command usually contains a command-name and a command-line definition. The important part
+     is the command-line definition, where we enter the path to our script that will handle this
+     command and the Nagios-Makros that will be passed in to our "eventhandler"-script. Again, you 
+     can take a look at the example-files, important for our example are the commands "show-service" and "show-host".
+     
+   - the next step is to define our eventhandler-scripts. These will be usually placed inside
+     the Nagios-"libexec/eventhandler"-folder (e.g. /usr/local/nagios/libexec). Just copy the example-files 
+     from the "nagios-files" directory inside this folder (hellohost.sh, helloservice.sh). Within these 
+     script you must enter the Address/Port of the IfMapClient that will receive the messages
+    
+   For further Information and Documentation on Nagios in general take a look at http://www.nagios.org/documentation 
+   
+   
+c) IPTables installation & setup:
+
+   In order to work with IPTables, ULOG has to be installed on the machine. If it is not, just use the 
+   packet-manager to install it.
+
+
+d) FreeRadius installation & setup
+	
+   Install FreeRadius as described at http://freeradius.org/doc/ . The example folder contains configuration 
+   examples for radius. Most important for logging is the log section in the radiusd.conf file. Otherwise
+   you can configure the radius server with you own configuration that you find appropriate. The most important
+   file is clients.conf. Add all clients which should authenticate with the radius server here.
+   If you use a MySQL database for logging and user management you should read the site wiki.freeradius.org/SQL-HOWTO.
+   This site explain some basics regarding sql and freeradius. 
+
+
+e) configuring the IF-MAP-Client:
+
+   to use the IfMapClient you first have to configure it by editing the config files inside the
+   "config" folder. The config folder holds two config files and four subfolders
+   
+   - config.properties: 
+     This is the main configuration file for the IfMapClient. Beside some "general" options, the activation
+     of the different components can be done here inside the "POLLING/MAPPING CONFIGURATION"-section.
+     You can take a look at the comments to get information on how to configure the different components.
+     Please Note that only one of the components can be active at a time, so you have to run one instance of
+     of the client for each component you want to use.    
+     
+   - logging.properties:
+     Contains properties for application logging (log-level and so on)
+   
+   - iptables-folder:
+     contains the following configuration files for the IPTables component:
+     
+     - file_polling.properties    -> defines options for observing logfile
+     - mapping.properties         -> defines mapping options for converting read in entries to IFMAP-Events
+     - enforcement.properties     -> defines options for enforcement via IPTables
+   
+   - snort-folder:
+     contains the following configuration files for the Snort component:
+     
+     - db_polling.properties      -> defines options for connecting to snort-log sql-database
+     - file_polling.properties    -> defines options for observing logfile
+     - mapping.properties         -> defines options for converting read in entries to IFMAP-Events
+    
+   - nagios folder:
+     contains the following configuration files for the Nagios component:
+     
+     - socket_polling.properties  -> defines options for receiving Nagios messages over a specific port
+     - mapping.properties defines -> options for mapping Nagios-Events to IFMAP-Events
+	 
+   - radius folder:
+  	 contains the following configuration files for the FreeRadius component:
+  	 
+  	 - file_polling.properties    -> defines the location of the log-files
+  	 - mapping.properties         -> not used a.t.m
+   
+   
+f) running the IF-MAP-Client:
+   There are 3 ways of starting the IfMapClient. The First one is using the start.bat or start.sh file which is
+   contained in the Main-Folder. If you use these files, the IfMapClient will start with the component that is configured
+   inside the main config-file (config/config.properties).
+   
+   The second option is to use one of the "quickstart"-files. These Files will automatically start the IfMapClient
+   using the desired component, so you don�t have to configure the Mapping/Polling Parameters. 
+   
+   The third way is starting the IfMapClient Jar-File manually. If you choose this way, you can pass an additional
+   option for automatically starting one of the components. These additional Options include:
+   
+   - snort-ascii
+   - snort-barnyard
+   - snort-sql
+   - nagios
+   - iptables
+   
+   If you don�t pass in any parameters, the IfMapClient will start with the component configured in the main config-file
+ 
+ 
+g) certificate-based authentication:
+   the self signed certificate for this map-client (both in .pem and .der format) as well as the map-client's
+   keystore are located in the "/keystore" folder. For certificate-based authentication both the map-client and
+   the map-server have to contain the relating certificate inside their keystore. The following commands may
+   be helpful when dealing with certificates. Both the Java-Keytool and openssl have to be installed on your system
+   in order to execute these commands:
+   
+   - create new keystore: 
+     keytool -keystore foo.jks -genkeypair -alias foo
+   
+   - convert existing keystore to pkcs12 format:
+     keytool -importkeystore -srckeystore foo.jks -destkeystore foo.p12 -srcstoretype jks -deststoretype pkcs12
+   
+   - export certificate from keystore in .pem format using openssl: 
+     openssl pkcs12 -in foo.p12 -out foo.pem
+   
+   - convert certificate to .der format using openssl:
+     openssl x509 -outform der -in foo.pem -out foo.der
+   
+   - import .der-certificate into target keystore:
+     keytool -import -alias foo -keystore foo.jks -storepass targetstorepass -file ".der file to import"
+     
+   - show all certificates in targer keystore:
+     keytool -list -keystore foo.jks
+     
+
+   
+(c) 2012 ESUKOM-Project (http://www.esukom.de/)
